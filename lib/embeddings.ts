@@ -1,8 +1,12 @@
-import pLimit from "p-limit";
-
 const EMBED_MODEL = process.env.GEMINI_EMBED_MODEL || "gemini-embedding-001";
 const EMBED_DIM = 768;
-const BATCH_SIZE = 100;
+
+/**
+ * Gemini free tier counts every text in a batchEmbedContents call against the
+ * ~100 embed-requests/minute quota, so batches are kept small and 429s are
+ * retried after the retryDelay Google returns.
+ */
+export const EMBED_BATCH = 50;
 
 function apiKey(byoKey?: string): string {
   const key = byoKey || process.env.GEMINI_API_KEY;
@@ -10,23 +14,12 @@ function apiKey(byoKey?: string): string {
   return key;
 }
 
-async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const msg = String(err);
-      const retryable = msg.includes("429") || msg.includes("503") || msg.includes("500");
-      if (!retryable || i === tries - 1) throw err;
-      await new Promise((r) => setTimeout(r, 2000 * 2 ** i + Math.random() * 500));
-    }
-  }
-  throw lastErr;
+function parseRetryDelayMs(errText: string): number | null {
+  const m = errText.match(/retryDelay[^\d]*(\d+)/i) ?? errText.match(/retry in (\d+)/i);
+  return m ? (parseInt(m[1], 10) + 2) * 1000 : null;
 }
 
-async function embedBatch(texts: string[], taskType: string, key: string): Promise<number[][]> {
+async function embedBatchRaw(texts: string[], taskType: string, key: string): Promise<number[][]> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:batchEmbedContents?key=${key}`,
     {
@@ -35,7 +28,7 @@ async function embedBatch(texts: string[], taskType: string, key: string): Promi
       body: JSON.stringify({
         requests: texts.map((text) => ({
           model: `models/${EMBED_MODEL}`,
-          content: { parts: [{ text: text.slice(0, 30000) }] },
+          content: { parts: [{ text: text.slice(0, 8000) }] },
           taskType,
           outputDimensionality: EMBED_DIM,
         })),
@@ -47,34 +40,32 @@ async function embedBatch(texts: string[], taskType: string, key: string): Promi
   return json.embeddings.map((e: { values: number[] }) => e.values);
 }
 
-/** Embed document chunks in batches of 100, concurrency 2, retry on 429/5xx. */
-export async function embedDocuments(
+/**
+ * Embed one batch, retrying on 429/5xx. On quota errors, honors the
+ * retryDelay from the error payload (capped by maxWaitMs per attempt).
+ */
+export async function embedBatch(
   texts: string[],
-  onProgress?: (done: number) => void
+  taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY",
+  opts: { byoKey?: string; tries?: number; maxWaitMs?: number } = {}
 ): Promise<number[][]> {
-  const key = apiKey();
-  const limit = pLimit(2);
-  const batches: string[][] = [];
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    batches.push(texts.slice(i, i + BATCH_SIZE));
+  const { byoKey, tries = 4, maxWaitMs = 70_000 } = opts;
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await embedBatchRaw(texts, taskType, apiKey(byoKey));
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err);
+      if (!/\b(429|500|502|503)\b/.test(msg) || i === tries - 1) throw err;
+      const wait = Math.min(parseRetryDelayMs(msg) ?? 3000 * 2 ** i, maxWaitMs);
+      await new Promise((r) => setTimeout(r, wait));
+    }
   }
-  let done = 0;
-  const results = await Promise.all(
-    batches.map((batch, idx) =>
-      limit(async () => {
-        const vecs = await withRetry(() => embedBatch(batch, "RETRIEVAL_DOCUMENT", key));
-        done += batch.length;
-        onProgress?.(done);
-        return { idx, vecs };
-      })
-    )
-  );
-  return results
-    .sort((a, b) => a.idx - b.idx)
-    .flatMap((r) => r.vecs);
+  throw lastErr;
 }
 
 export async function embedQuery(text: string, byoKey?: string): Promise<number[]> {
-  const [vec] = await withRetry(() => embedBatch([text], "RETRIEVAL_QUERY", apiKey(byoKey)));
+  const [vec] = await embedBatch([text], "RETRIEVAL_QUERY", { byoKey });
   return vec;
 }

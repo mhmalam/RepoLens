@@ -52,9 +52,9 @@ export const MAX_TARBALL_BYTES = 40 * 1024 * 1024;
 export const MAX_INDEXABLE_FILES = 3000;
 
 const SKIP_DIRS =
-  /(^|\/)(node_modules|dist|build|out|vendor|\.git|\.next|coverage|__pycache__|\.venv|venv|target|\.idea|\.vscode|fixtures?|snapshots?|__snapshots__)(\/|$)/;
+  /(^|\/)(node_modules|dist|build|out|vendor|\.git|\.next|coverage|__pycache__|\.venv|venv|target|\.idea|\.vscode|fixtures?|snapshots?|__snapshots__|test|tests|e2e|__tests__|benchmarks?)(\/|$)/;
 const SKIP_FILES =
-  /(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|go\.sum|composer\.lock|Gemfile\.lock|poetry\.lock|uv\.lock|\.min\.(js|css)|\.map)$/i;
+  /(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|Cargo\.lock|go\.sum|composer\.lock|Gemfile\.lock|poetry\.lock|uv\.lock|\.min\.(js|css)|\.map|\.(test|spec)\.[cm]?[jt]sx?|_test\.go|test_[^/]*\.py)$/i;
 const BINARY_EXT =
   /\.(png|jpe?g|gif|webp|ico|icns|svg|pdf|zip|gz|tar|br|woff2?|ttf|otf|eot|mp[34]|webm|mov|avi|wasm|exe|dll|so|dylib|class|jar|pyc|db|sqlite|bin|dat|onnx|pt|pb|npz|parquet)$/i;
 

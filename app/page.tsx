@@ -13,6 +13,7 @@ interface RepoStatus {
   id: string;
   status: "pending" | "indexing" | "ready" | "failed";
   file_count: number;
+  chunk_count: number;
   indexed_files: number;
   error: string | null;
 }
@@ -105,8 +106,8 @@ export default function Home() {
       {busy && (
         <div className="mt-6 flex items-center gap-3 text-sm text-muted">
           <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-accent" />
-          {progress?.status === "indexing" && progress.file_count > 0
-            ? `Indexing… ${progress.indexed_files.toLocaleString()}/${progress.file_count.toLocaleString()} files`
+          {progress?.status === "indexing" && progress.chunk_count > 0
+            ? `Indexing… ${progress.indexed_files.toLocaleString()}/${progress.chunk_count.toLocaleString()} chunks embedded`
             : "Fetching repository…"}
         </div>
       )}

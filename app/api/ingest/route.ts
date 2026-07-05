@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { db } from "@/lib/db";
 import { fetchRepoMeta, parseRepoUrl } from "@/lib/github";
-import { ingestRepo } from "@/lib/ingest";
+import { claimAndPump, startIngest } from "@/lib/ingest";
 import { checkRateLimit, clientIp } from "@/lib/ratelimit";
 
 export const maxDuration = 300;
@@ -60,8 +60,18 @@ export async function POST(req: NextRequest) {
       .single();
     if (error) throw new Error(error.message);
 
-    // Continue ingesting after the response is sent; UI polls for status.
-    after(() => ingestRepo(repo.id, meta));
+    // Continue after the response is sent: insert chunks fast, then embed in
+    // quota-paced slices for as long as this invocation lives. If it dies
+    // first, status polls (GET /api/repos/[id]) resume the pumping.
+    after(async () => {
+      await startIngest(repo.id, meta);
+      const deadline = Date.now() + 240_000;
+      while (Date.now() < deadline) {
+        const { remaining } = await claimAndPump(repo.id);
+        if (remaining === 0) break;
+        await new Promise((r) => setTimeout(r, 31_000));
+      }
+    });
 
     return NextResponse.json({ repoId: repo.id, status: "pending" });
   } catch (err) {

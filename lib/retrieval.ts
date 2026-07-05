@@ -31,7 +31,8 @@ export async function retrieve(
     p_match_count: VECTOR_TOP_K,
   });
   if (error) throw new Error(`match_chunks failed: ${error.message}`);
-  const candidates = (data ?? []) as ChunkRow[];
+  // Not-yet-embedded chunks sort last with NULL similarity; drop them.
+  const candidates = ((data ?? []) as ChunkRow[]).filter((c) => c.similarity != null);
 
   const terms = extractTerms(question);
   const scored = candidates.map((c) => {
