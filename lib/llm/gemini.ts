@@ -1,6 +1,6 @@
 import { ChatMessage, Provider, StreamResult, Usage } from "./types";
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 function key(byo?: string): string {

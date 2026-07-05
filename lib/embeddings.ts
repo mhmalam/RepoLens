@@ -1,6 +1,7 @@
 import pLimit from "p-limit";
 
-const EMBED_MODEL = "text-embedding-004";
+const EMBED_MODEL = process.env.GEMINI_EMBED_MODEL || "gemini-embedding-001";
+const EMBED_DIM = 768;
 const BATCH_SIZE = 100;
 
 function apiKey(byoKey?: string): string {
@@ -36,6 +37,7 @@ async function embedBatch(texts: string[], taskType: string, key: string): Promi
           model: `models/${EMBED_MODEL}`,
           content: { parts: [{ text: text.slice(0, 30000) }] },
           taskType,
+          outputDimensionality: EMBED_DIM,
         })),
       }),
     }
