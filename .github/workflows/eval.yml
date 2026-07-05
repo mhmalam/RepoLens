@@ -13,6 +13,12 @@ jobs:
   eval:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,10 +30,9 @@ jobs:
       - run: npm ci
 
       - name: Run eval suite
+        if: env.SUPABASE_URL != ''
         run: npm run eval
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT || github.token }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+      - name: Secrets not configured — skipping evals
+        if: env.SUPABASE_URL == ''
+        run: echo "::notice::Eval secrets not set; skipping eval run."
