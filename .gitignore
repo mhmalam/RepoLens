@@ -1,0 +1,28 @@
+# deps
+/node_modules
+
+# next
+/.next/
+/out/
+next-env.d.ts
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+
+# env
+.env
+.env.local
+.env*.local
+
+# vercel
+.vercel
+
+# ts
+*.tsbuildinfo
+
+# local tooling
+.claude/
+CLAUDE.md
+SPEC.md
