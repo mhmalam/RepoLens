@@ -52,10 +52,15 @@ quality from generation quality) and answer score 0–2 from an LLM judge agains
 per-case rubric. Results land in an `eval_runs` table; CI fails if the pass rate drops
 more than 10 points vs the previous run, so quality regressions block the merge.
 
-**Free-tier constraints.** Serverless-safe ingestion (3,000-file / 40MB tarball caps,
-in-memory extraction, `after()` for post-response indexing), batched embeddings with
-retry-on-429, per-IP rate limiting via Upstash with a BYO-key escape hatch
-(keys stay in localStorage, sent per-request, never stored).
+**Free-tier constraints.** The hardest one: Gemini's free embedding tier allows ~100
+embed-requests/minute, and each text in a batch counts. Ingestion is therefore split
+into a fast phase (download tarball in memory, chunk, insert rows with NULL embeddings)
+and a resumable pump: every status poll triggers the next quota-paced embedding slice,
+guarded by a Redis `SET NX` lock so concurrent pollers don't double-spend quota, with
+Google's `retryDelay` honored on 429. Indexing survives serverless timeouts by design —
+no queue infrastructure needed. Plus: 3,000-file / 40MB caps, test-file exclusion,
+per-IP rate limiting via Upstash with a BYO-key escape hatch (keys stay in
+localStorage, sent per-request, never stored).
 
 ## Eval results
 
