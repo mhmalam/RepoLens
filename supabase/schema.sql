@@ -58,6 +58,13 @@ create table if not exists eval_runs (
   created_at timestamptz not null default now()
 );
 
+-- The app only uses the service-role key (bypasses RLS). Enabling RLS with no
+-- policies makes every table deny-all for the anon key.
+alter table repos enable row level security;
+alter table chunks enable row level security;
+alter table queries enable row level security;
+alter table eval_runs enable row level security;
+
 -- Cosine-similarity search scoped to one repo.
 create or replace function match_chunks(
   p_repo_id uuid,
