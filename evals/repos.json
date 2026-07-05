@@ -1,0 +1,10 @@
+{
+  "honojs/hono": {
+    "defaultBranch": "main",
+    "sha": "d6b1d32a697ef9ba9f5036753fe9bde1121c0ff9"
+  },
+  "expressjs/express": {
+    "defaultBranch": "master",
+    "sha": "18e5985b8a9d5e8423db0a9121f22bdaecd5b120"
+  }
+}
