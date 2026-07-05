@@ -1,7 +1,12 @@
 import { Redis } from "@upstash/redis";
 import { chunkHeader, chunkRepo } from "./chunker";
 import { db } from "./db";
-import { embedBatch, EMBED_BATCH } from "./embeddings";
+import {
+  embedBatch,
+  EMBED_BATCH,
+  EMBED_BATCH_TOKEN_BUDGET,
+  estimateTokens,
+} from "./embeddings";
 import { downloadRepoFiles, RepoMeta } from "./github";
 
 const INSERT_BATCH = 200;
@@ -64,7 +69,7 @@ export async function pumpEmbeddings(
   const supabase = db();
 
   for (let b = 0; b < maxBatches; b++) {
-    const { data: rows, error } = await supabase
+    const { data: fetched, error } = await supabase
       .from("chunks")
       .select("id,file_path,start_line,end_line,content")
       .eq("repo_id", repoId)
@@ -72,6 +77,14 @@ export async function pumpEmbeddings(
       .order("id", { ascending: true })
       .limit(EMBED_BATCH);
     if (error) throw new Error(error.message);
+
+    // A batch whose total tokens exceed the free tier's tokens/minute cap can
+    // NEVER succeed, so cut the batch by estimated tokens, not just count.
+    let rows = fetched ?? [];
+    let budget = EMBED_BATCH_TOKEN_BUDGET;
+    const cut = rows.findIndex((r) => (budget -= estimateTokens(r.content)) < 0);
+    if (cut > 0) rows = rows.slice(0, cut);
+    else if (cut === 0) rows = rows.slice(0, 1); // single oversized chunk: char cap keeps it legal
 
     if (!rows || rows.length === 0) {
       const { count } = await supabase
@@ -106,6 +119,7 @@ export async function pumpEmbeddings(
     } catch (err) {
       // Quota exhausted for now (or transient failure): record progress and
       // let the next poll resume. Only hard-fail if nothing was embedded yet.
+      console.error("pump embed error:", String(err).slice(0, 300));
       const { count: done } = await supabase
         .from("chunks")
         .select("id", { count: "exact", head: true })

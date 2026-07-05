@@ -8,6 +8,15 @@ const EMBED_DIM = 768;
  */
 export const EMBED_BATCH = 50;
 
+/** Free tier also caps embedding at ~30k tokens/minute; batches must stay under it. */
+export const EMBED_BATCH_TOKEN_BUDGET = 18_000;
+export const EMBED_TEXT_CHAR_CAP = 6000;
+
+/** Rough token estimate for code (~3.5 chars/token). */
+export function estimateTokens(text: string): number {
+  return Math.ceil(Math.min(text.length, EMBED_TEXT_CHAR_CAP) / 3.5);
+}
+
 function apiKey(byoKey?: string): string {
   const key = byoKey || process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY not set");
@@ -28,7 +37,9 @@ async function embedBatchRaw(texts: string[], taskType: string, key: string): Pr
       body: JSON.stringify({
         requests: texts.map((text) => ({
           model: `models/${EMBED_MODEL}`,
-          content: { parts: [{ text: text.slice(0, 8000) }] },
+          // gemini-embedding-001 caps input at 2,048 tokens; code runs ~3.5
+          // chars/token, so 6,000 chars keeps every chunk under the limit.
+          content: { parts: [{ text: text.slice(0, EMBED_TEXT_CHAR_CAP) }] },
           taskType,
           outputDimensionality: EMBED_DIM,
         })),
