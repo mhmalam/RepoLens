@@ -117,19 +117,24 @@ export async function pumpEmbeddings(
         )
       );
     } catch (err) {
-      // Quota exhausted for now (or transient failure): record progress and
-      // let the next poll resume. Only hard-fail if nothing was embedded yet.
       console.error("pump embed error:", String(err).slice(0, 300));
-      const { count: done } = await supabase
-        .from("chunks")
-        .select("id", { count: "exact", head: true })
-        .eq("repo_id", repoId)
-        .not("embedding", "is", null);
-      if (!done) {
-        await supabase
-          .from("repos")
-          .update({ status: "failed", error: err instanceof Error ? err.message : String(err) })
-          .eq("id", repoId);
+      // Quota errors (429) are always resumable — stay 'indexing' and let the
+      // next poll retry once the window clears. Hard-fail only on non-quota
+      // errors when nothing has been embedded yet (a count of null means the
+      // count query itself failed — never treat that as zero).
+      const quotaError = /\b429\b/.test(String(err));
+      if (!quotaError) {
+        const { count: done, error: countErr } = await supabase
+          .from("chunks")
+          .select("id", { count: "exact", head: true })
+          .eq("repo_id", repoId)
+          .not("embedding", "is", null);
+        if (!countErr && done === 0) {
+          await supabase
+            .from("repos")
+            .update({ status: "failed", error: err instanceof Error ? err.message : String(err) })
+            .eq("id", repoId);
+        }
       }
       const { count: left } = await supabase
         .from("chunks")
