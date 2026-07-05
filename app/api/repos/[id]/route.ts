@@ -21,7 +21,9 @@ export async function GET(
   if (!data) return NextResponse.json({ error: "Repo not found" }, { status: 404 });
   // Polling doubles as the engine that resumes quota-paced embedding.
   if (data.status === "indexing") {
-    after(() => guardedPump(data.id).catch(() => {}));
+    after(() =>
+      guardedPump(data.id).catch((err) => console.error("pump error:", err))
+    );
   }
   return NextResponse.json(data);
 }

@@ -151,16 +151,32 @@ export async function pumpEmbeddings(
   return { remaining: remaining ?? 0 };
 }
 
-const PUMP_LOCK_TTL = 35; // seconds; ~1.7 pumps/min * 50 chunks stays under the 100/min quota
+// The lock must outlive a full pump INCLUDING its 429 retry waits — if it
+// expires mid-retry, another poller starts a second batch into the same
+// exhausted quota window and the retriers starve each other forever.
+const PUMP_LOCK_TTL = 150; // seconds — covers one pump with retries
+const PUMP_COOLDOWN = 30; // seconds between successful slices ≈ 100 embeds/min
 
 function pumpRedis() {
   if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) return null;
   return Redis.fromEnv();
 }
 
+async function lockedPump(repoId: string): Promise<{ remaining: number }> {
+  const redis = pumpRedis();
+  const key = `repolens:pump:${repoId}`;
+  try {
+    return await pumpEmbeddings(repoId, { maxBatches: 1 });
+  } finally {
+    // Downgrade the long safety TTL to a short cooldown so the next slice
+    // (from any poller) starts on quota-friendly pacing.
+    if (redis) await redis.set(key, "1", { ex: PUMP_COOLDOWN }).catch(() => {});
+  }
+}
+
 /**
- * Pump one batch only if no other invocation pumped recently (NX lock).
- * Returns null when another worker holds the lock.
+ * Pump one batch only if no other invocation is pumping or cooling down
+ * (NX lock). Returns null when another worker holds the lock.
  */
 export async function guardedPump(repoId: string): Promise<{ remaining: number } | null> {
   const redis = pumpRedis();
@@ -168,14 +184,14 @@ export async function guardedPump(repoId: string): Promise<{ remaining: number }
     const ok = await redis.set(`repolens:pump:${repoId}`, "1", { nx: true, ex: PUMP_LOCK_TTL });
     if (ok !== "OK") return null;
   }
-  return pumpEmbeddings(repoId, { maxBatches: 1 });
+  return lockedPump(repoId);
 }
 
-/** Pump unconditionally, refreshing the lock so pollers stand down. */
+/** Pump unconditionally, taking the lock so pollers stand down. */
 export async function claimAndPump(repoId: string): Promise<{ remaining: number }> {
   const redis = pumpRedis();
   if (redis) await redis.set(`repolens:pump:${repoId}`, "1", { ex: PUMP_LOCK_TTL });
-  return pumpEmbeddings(repoId, { maxBatches: 1 });
+  return lockedPump(repoId);
 }
 
 /** Run start + pump to completion in-process (used by the eval runner / scripts). */
