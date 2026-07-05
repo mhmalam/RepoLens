@@ -1,5 +1,8 @@
--- RepoLens schema — run in the Supabase SQL editor.
-create extension if not exists vector;
+-- RepoLens schema — run this whole file in the Supabase SQL editor.
+-- pgvector lives in the `extensions` schema on Supabase; the search_path
+-- lines below make the bare `vector` type resolve either way.
+create extension if not exists vector with schema extensions;
+set search_path = public, extensions;
 
 create table if not exists repos (
   id uuid primary key default gen_random_uuid(),
@@ -70,7 +73,9 @@ returns table (
   content text,
   similarity float
 )
-language sql stable as $$
+language sql stable
+set search_path = public, extensions
+as $$
   select c.id, c.file_path, c.start_line, c.end_line, c.language, c.content,
          1 - (c.embedding <=> p_query_embedding) as similarity
   from chunks c
@@ -78,3 +83,6 @@ language sql stable as $$
   order by c.embedding <=> p_query_embedding
   limit p_match_count;
 $$;
+
+-- Make PostgREST pick up the new objects immediately.
+notify pgrst, 'reload schema';
